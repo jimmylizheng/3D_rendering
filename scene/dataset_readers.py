@@ -137,13 +137,13 @@ def storePly(path, xyz, rgb):
 
 def readColmapSceneInfo(path, images, eval, llffhold=8):
     try:
-        cameras_extrinsic_file = os.path.join(path, "sparse_high/0", "images.bin")
-        cameras_intrinsic_file = os.path.join(path, "sparse_high/0", "cameras.bin")
+        cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
+        cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
         cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
     except:
-        cameras_extrinsic_file = os.path.join(path, "sparse_high/0", "images.txt")
-        cameras_intrinsic_file = os.path.join(path, "sparse_high/0", "cameras.txt")
+        cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.txt")
+        cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.txt")
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
@@ -160,9 +160,9 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = os.path.join(path, "sparse_high/0/points3D.ply")
-    bin_path = os.path.join(path, "sparse_high/0/points3D.bin")
-    txt_path = os.path.join(path, "sparse_high/0/points3D.txt")
+    ply_path = os.path.join(path, "sparse/0/random.ply")
+    bin_path = os.path.join(path, "sparse/0/random.bin")
+    txt_path = os.path.join(path, "sparse/0/points3D.txt")
     if not os.path.exists(ply_path):
         if os.path.exists(bin_path): # colmap binary exists, convert from binary
             print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
@@ -172,7 +172,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
                 xyz, rgb, _ = read_points3D_text(txt_path)
             storePly(ply_path, xyz, rgb)
         else: # random generate points
-            num_pts = 100_000
+            num_pts = 183_000
             print(f"Generating random point cloud ({num_pts})...")
             
             # We create random points inside the bounds of the synthetic Blender scenes
