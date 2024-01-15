@@ -136,14 +136,16 @@ def storePly(path, xyz, rgb):
     ply_data.write(path)
 
 def readColmapSceneInfo(path, images, eval, llffhold=8):
+    custom_dir = "sparse/0"
+
     try:
-        cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.bin")
-        cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.bin")
+        cameras_extrinsic_file = os.path.join(path, custom_dir, "images.bin")
+        cameras_intrinsic_file = os.path.join(path, custom_dir, "cameras.bin")
         cam_extrinsics = read_extrinsics_binary(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_binary(cameras_intrinsic_file)
     except:
-        cameras_extrinsic_file = os.path.join(path, "sparse/0", "images.txt")
-        cameras_intrinsic_file = os.path.join(path, "sparse/0", "cameras.txt")
+        cameras_extrinsic_file = os.path.join(path, custom_dir, "images.txt")
+        cameras_intrinsic_file = os.path.join(path, custom_dir, "cameras.txt")
         cam_extrinsics = read_extrinsics_text(cameras_extrinsic_file)
         cam_intrinsics = read_intrinsics_text(cameras_intrinsic_file)
 
@@ -160,11 +162,11 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = os.path.join(path, "sparse/0/random.ply")
-    bin_path = os.path.join(path, "sparse/0/random.bin")
-    txt_path = os.path.join(path, "sparse/0/points3D.txt")
-    if not os.path.exists(ply_path):
-        if os.path.exists(bin_path): # colmap binary exists, convert from binary
+    ply_path = os.path.join(path, custom_dir + "/183k_base.ply")
+    bin_path = os.path.join(path, custom_dir + "/random.bin")
+    txt_path = os.path.join(path, custom_dir + "/points3D.txt")
+    if not os.path.exists(ply_path): # if ply not exist,
+        if os.path.exists(bin_path): # colmap point cloud binary exists, convert from binary
             print("Converting point3d.bin to .ply, will happen only the first time you open the scene.")
             try:
                 xyz, rgb, _ = read_points3D_binary(bin_path)
@@ -182,7 +184,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
 
             storePly(ply_path, xyz, SH2RGB(shs) * 255)
     try:
-        print("fetch ply from path:", ply_path)
+        print("fetch ply from path:", ply_path) # fetch the ply
         pcd = fetchPly(ply_path)
     except:
         pcd = None
