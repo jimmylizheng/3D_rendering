@@ -36,6 +36,7 @@ class CameraInfo(NamedTuple):
     height: int
 
 class SceneInfo(NamedTuple):
+    pre_trained_point_cloud: BasicPointCloud
     point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
@@ -67,6 +68,7 @@ def getNerfppNorm(cam_info):
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
     cam_infos = []
+    print("Reading images from folder:", images_folder)
     for idx, key in enumerate(cam_extrinsics):
         sys.stdout.write('\r')
         # the exact output you're looking for:
@@ -162,7 +164,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
 
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    ply_path = os.path.join(path, custom_dir + "/183k_base.ply")
+    ply_path = os.path.join(path, custom_dir + "/base.ply")
     bin_path = os.path.join(path, custom_dir + "/random.bin")
     txt_path = os.path.join(path, custom_dir + "/points3D.txt")
     if not os.path.exists(ply_path): # if ply not exist,
@@ -189,11 +191,16 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     except:
         pcd = None
 
+    pre_trained_path = os.path.join(path, custom_dir + "/base_0005_HF.ply")
+    print("fetch pre trained ply: ", pre_trained_path)
+    pre_trained_pcd = fetchPly(pre_trained_path)
+
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
-                           ply_path=ply_path)
+                           ply_path=ply_path,
+                           pre_trained_point_cloud=pre_trained_pcd)
     return scene_info
 
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):

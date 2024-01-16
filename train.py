@@ -80,10 +80,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             viewpoint_stack = scene.getTrainCameras().copy()
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
+        # when render and calculate loss, concat gaussians and pre_trained_gaussians
+        allGaussians = combined_gaussians(scene.pre_trained_gaussians, gaussians)
+
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+        render_pkg = render(viewpoint_cam, allGaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
 
         # Loss
@@ -107,7 +110,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                scene.save(iteration)
+                # scene.save(iteration)
+                scene.save(allGaussians, iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -130,6 +134,21 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+
+def combined_gaussians(base : GaussianModel, gaussians : GaussianModel):
+    allGaussians = GaussianModel(dataset.sh_degree)
+    allGaussians._xyz = torch.cat([base._xyz, gaussians._xyz], dim=0)
+    allGaussians._opacity = torch.cat([base._opacity, gaussians._opacity], dim=0)
+    allGaussians._scaling = torch.cat([base._scaling, gaussians._scaling], dim=0)
+    allGaussians._rotation = torch.cat([base._rotation, gaussians._rotation], dim=0)
+    allGaussians._features_dc = torch.cat([base._features_dc, gaussians._features_dc], dim=0)
+    allGaussians._features_rest = torch.cat([base._features_rest, gaussians._features_rest], dim=0)
+    
+    allGaussians.active_sh_degree = gaussians.active_sh_degree
+    allGaussians.max_sh_degree = gaussians.max_sh_degree
+
+    return allGaussians
+
 
 def prepare_output_and_logger(args):    
     if not args.model_path:
