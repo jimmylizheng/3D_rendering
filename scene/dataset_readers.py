@@ -36,7 +36,6 @@ class CameraInfo(NamedTuple):
     height: int
 
 class SceneInfo(NamedTuple):
-    pre_trained_point_cloud: BasicPointCloud
     point_cloud: BasicPointCloud
     train_cameras: list
     test_cameras: list
@@ -191,16 +190,11 @@ def readColmapSceneInfo(path, images, eval, llffhold=8):
     except:
         pcd = None
 
-    pre_trained_path = os.path.join(path, custom_dir + "/base_0005_HF.ply")
-    print("fetch pre trained ply: ", pre_trained_path)
-    pre_trained_pcd = fetchPly(pre_trained_path)
-
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            nerf_normalization=nerf_normalization,
-                           ply_path=ply_path,
-                           pre_trained_point_cloud=pre_trained_pcd)
+                           ply_path=ply_path)
     return scene_info
 
 def readCamerasFromTransforms(path, transformsfile, white_background, extension=".png"):

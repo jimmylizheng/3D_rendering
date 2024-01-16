@@ -49,7 +49,7 @@ class ModelParams(ParamGroup):
         self.sh_degree = 3
         self._source_path = ""
         self._model_path = ""
-        self._images = "image" #"images_low_31" # use HF/LF images
+        self._images = "images" #"images_low_31" # use HF/LF images
         self._resolution = -1
         self._white_background = False
         self.data_device = "cuda"

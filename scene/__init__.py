@@ -29,7 +29,6 @@ class Scene:
         self.model_path = args.model_path
         self.loaded_iter = None
         self.gaussians = gaussians
-        self.pre_trained_gaussians = None
 
         if load_iteration:
             if load_iteration == -1:
@@ -83,7 +82,13 @@ class Scene:
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
-        self.pre_trained_gaussians.create_from_pcd(scene_info.pre_trained_point_cloud, self.cameras_extent)
+
+        pre_trained_path = os.path.join(args.source_path,
+                                        "sparse/0",
+                                        "base_0005_HF.ply")
+        print("fetch pre trained ply: ", pre_trained_path)
+        self.pre_trained_gaussians = GaussianModel(gaussians.active_sh_degree)
+        self.pre_trained_gaussians.load_ply(pre_trained_path)
 
     def save(self, combinedGaussians, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

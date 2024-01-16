@@ -81,7 +81,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         # when render and calculate loss, concat gaussians and pre_trained_gaussians
-        allGaussians = combined_gaussians(scene.pre_trained_gaussians, gaussians)
+        allGaussians = combined_gaussians(gaussians.active_sh_degree, scene.pre_trained_gaussians, gaussians)
 
         # Render
         if (iteration - 1) == debug_from:
@@ -135,8 +135,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-def combined_gaussians(base : GaussianModel, gaussians : GaussianModel):
-    allGaussians = GaussianModel(dataset.sh_degree)
+def combined_gaussians(sh_degree, base : GaussianModel, gaussians : GaussianModel):
+    allGaussians = GaussianModel(sh_degree)
     allGaussians._xyz = torch.cat([base._xyz, gaussians._xyz], dim=0)
     allGaussians._opacity = torch.cat([base._opacity, gaussians._opacity], dim=0)
     allGaussians._scaling = torch.cat([base._scaling, gaussians._scaling], dim=0)
