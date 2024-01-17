@@ -29,7 +29,7 @@ def render(viewpoint_camera, pc : GaussianModel, prePC: GaussianModel, pipe, bg_
     except:
         pass
 
-    screenspace_points_pre = torch.zeros_like(prePC.get_xyz, dtype=prePC.get_xyz.dtype, requires_grad=False, device="cuda") + 0
+    screenspace_points_pre = torch.zeros_like(prePC.get_xyz, dtype=prePC.get_xyz.dtype, requires_grad=True, device="cuda") + 0
 
     all_xyz = torch.cat([pc._xyz, prePC._xyz], dim=0)
     all_opacity = torch.cat([pc._opacity, prePC._opacity], dim=0)

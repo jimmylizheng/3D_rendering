@@ -120,14 +120,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
 
-                combined_gaussians = GaussianModel(3)
-                combined_gaussians._xyz = torch.cat([gaussians._xyz, scene.pre_trained_gaussians._xyz], dim=0)
-                combined_gaussians._features_dc = torch.cat([gaussians._features_dc, scene.pre_trained_gaussians._features_dc], dim=0)
-                combined_gaussians._features_rest = torch.cat([gaussians._features_rest, scene.pre_trained_gaussians._features_rest], dim=0)
-                combined_gaussians._opacity = torch.cat([gaussians._opacity, scene.pre_trained_gaussians._opacity], dim=0)
-                combined_gaussians._scaling = torch.cat([gaussians._scaling, scene.pre_trained_gaussians._scaling], dim=0)
-                combined_gaussians._rotation = torch.cat([gaussians._rotation, scene.pre_trained_gaussians._rotation], dim=0)
-
+                combined_gaussians = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
                 scene.save(combined_gaussians, iteration)
 
             # Densification
@@ -195,6 +188,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         tb_writer.add_scalar('train_loss_patches/total_loss', loss.item(), iteration)
         tb_writer.add_scalar('iter_time', elapsed, iteration)
 
+        tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+        tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+
     # Report test and samples of training set
     if iteration in testing_iterations:
         torch.cuda.empty_cache()
@@ -221,9 +217,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
 
-        if tb_writer:
-            tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
-            tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+        # if tb_writer:
+        #     tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+        #     tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
 
 if __name__ == "__main__":
