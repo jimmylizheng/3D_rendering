@@ -81,14 +81,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
 
         # when render and calculate loss, concat gaussians and pre_trained_gaussians
-        allGaussians = combined_gaussians(gaussians.active_sh_degree, scene.pre_trained_gaussians, gaussians)
+        # allGaussians = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
 
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-        render_pkg = render(viewpoint_cam, allGaussians, pipe, background)
-        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        render_pkg = render(viewpoint_cam, gaussians, scene.pre_trained_gaussians, pipe, background)
+        # render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+        
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg['render'], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
@@ -96,6 +98,13 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
 
         iter_end.record()
+
+
+        # # need to discard the out-of-bound index (first part has the gaussians we are training)
+        training_gaussians_size = gaussians._xyz.size(0)
+        # viewspace_point_tensor = viewspace_point_tensor_all[:training_gaussians_size, :]
+        visibility_filter = visibility_filter[:training_gaussians_size]
+        radii = radii[:training_gaussians_size]
 
         with torch.no_grad():
             # Progress bar
@@ -135,14 +144,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-def combined_gaussians(sh_degree, base : GaussianModel, gaussians : GaussianModel):
+def combined_gaussians(sh_degree, gaussians : GaussianModel, base : GaussianModel):
     allGaussians = GaussianModel(sh_degree)
-    allGaussians._xyz = torch.cat([base._xyz, gaussians._xyz], dim=0)
-    allGaussians._opacity = torch.cat([base._opacity, gaussians._opacity], dim=0)
-    allGaussians._scaling = torch.cat([base._scaling, gaussians._scaling], dim=0)
-    allGaussians._rotation = torch.cat([base._rotation, gaussians._rotation], dim=0)
-    allGaussians._features_dc = torch.cat([base._features_dc, gaussians._features_dc], dim=0)
-    allGaussians._features_rest = torch.cat([base._features_rest, gaussians._features_rest], dim=0)
+    allGaussians._xyz = torch.cat([gaussians._xyz, base._xyz], dim=0)
+    allGaussians._opacity = torch.cat([gaussians._opacity, base._opacity], dim=0)
+    allGaussians._scaling = torch.cat([gaussians._scaling, base._scaling], dim=0)
+    allGaussians._rotation = torch.cat([gaussians._rotation, base._rotation], dim=0)
+    allGaussians._features_dc = torch.cat([gaussians._features_dc, base._features_dc], dim=0)
+    allGaussians._features_rest = torch.cat([gaussians._features_rest, base._features_rest], dim=0)
     
     allGaussians.active_sh_degree = gaussians.active_sh_degree
     allGaussians.max_sh_degree = gaussians.max_sh_degree
