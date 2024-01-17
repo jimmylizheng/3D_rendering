@@ -119,8 +119,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (scene.pre_trained_gaussians, pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                # scene.save(iteration)
-                scene.save(allGaussians, iteration)
+
+                combined_gaussians = GaussianModel(3)
+                combined_gaussians._xyz = torch.cat([gaussians._xyz, scene.pre_trained_gaussians._xyz], dim=0)
+                combined_gaussians._features_dc = torch.cat([gaussians._features_dc, scene.pre_trained_gaussians._features_dc], dim=0)
+                combined_gaussians._features_rest = torch.cat([gaussians._features_rest, scene.pre_trained_gaussians._features_rest], dim=0)
+                combined_gaussians._opacity = torch.cat([gaussians._opacity, scene.pre_trained_gaussians._opacity], dim=0)
+                combined_gaussians._scaling = torch.cat([gaussians._scaling, scene.pre_trained_gaussians._scaling], dim=0)
+                combined_gaussians._rotation = torch.cat([gaussians._rotation, scene.pre_trained_gaussians._rotation], dim=0)
+
+                scene.save(combined_gaussians, iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
