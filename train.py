@@ -120,8 +120,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
 
-                combined_gaussians = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
-                scene.save(combined_gaussians, iteration)
+                combined = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
+                scene.save(combined, iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:
