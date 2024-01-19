@@ -17,7 +17,7 @@ from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
-
+from utils.general_utils import progressive
 class Scene:
 
     gaussians : GaussianModel
@@ -83,17 +83,17 @@ class Scene:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
 
 
-        pre_trained_path = os.path.join(args.source_path,
-                                        "sparse/0",
-                                        "base_1_HF.ply")
-        print("fetch pre trained ply: ", pre_trained_path)
-        self.pre_trained_gaussians = GaussianModel(3)
-        self.pre_trained_gaussians.load_ply(pre_trained_path)
+        if progressive: # load pre-trained gaussians and combine
+            pre_trained_path = os.path.join(args.source_path,
+                                            "sparse/0",
+                                            "base_1_HF.ply")
+            print("fetch pre trained ply: ", pre_trained_path)
 
-    def save(self, combinedGaussians, iteration):
+            self.gaussians.combined_ply(pre_trained_path)
+
+    def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))
-        # self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
-        combinedGaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+        self.gaussians.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
 
     def getTrainCameras(self, scale=1.0):
         return self.train_cameras[scale]

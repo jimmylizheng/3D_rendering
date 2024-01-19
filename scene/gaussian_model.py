@@ -147,6 +147,7 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def training_setup(self, training_args):
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -211,6 +212,63 @@ class GaussianModel:
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
+
+    def combined_ply(self, path):
+        plydata = PlyData.read(path)
+
+        xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
+                        np.asarray(plydata.elements[0]["y"]),
+                        np.asarray(plydata.elements[0]["z"])),  axis=1)
+        opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+        features_dc = np.zeros((xyz.shape[0], 3, 1))
+        features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
+        features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
+        features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
+
+        extra_f_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("f_rest_")]
+        extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
+        assert len(extra_f_names)==3*(self.max_sh_degree + 1) ** 2 - 3
+        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+        for idx, attr_name in enumerate(extra_f_names):
+            features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
+        # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
+        features_extra = features_extra.reshape((features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1))
+
+        scale_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("scale_")]
+        scale_names = sorted(scale_names, key = lambda x: int(x.split('_')[-1]))
+        scales = np.zeros((xyz.shape[0], len(scale_names)))
+        for idx, attr_name in enumerate(scale_names):
+            scales[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+        rot_names = [p.name for p in plydata.elements[0].properties if p.name.startswith("rot")]
+        rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
+        rots = np.zeros((xyz.shape[0], len(rot_names)))
+        for idx, attr_name in enumerate(rot_names):
+            rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
+
+
+        pre_trained_xyz = torch.tensor(xyz, dtype=torch.float, device="cuda")
+        pre_trained_features_dc = torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous()
+        pre_trained_features_rest = torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous()
+        pre_trained_opacity = torch.tensor(opacities, dtype=torch.float, device="cuda")
+        pre_trained_scaling = torch.tensor(scales, dtype=torch.float, device="cuda")
+        pre_trained_rotation = torch.tensor(rots, dtype=torch.float, device="cuda")
+
+        def set_requires_grad(tensor, requires_grad):
+            """Returns a new tensor with the specified requires_grad setting."""
+            return tensor.detach().clone().requires_grad_(requires_grad)
+    
+        # combine the pre_trained gaussians to current gaussians
+        print("Combine gaussians with pre-trained gaussians. Pre-trained gaussians points", pre_trained_xyz.shape)
+        self._xyz = nn.Parameter(torch.cat([set_requires_grad(pre_trained_xyz, False), set_requires_grad(self._xyz, True)]))
+        self._features_dc = nn.Parameter(torch.cat([set_requires_grad(pre_trained_features_dc, False), set_requires_grad(self._features_dc, True)]))
+        self._features_rest = nn.Parameter(torch.cat([set_requires_grad(pre_trained_features_rest, False), set_requires_grad(self._features_rest, True)]))
+        self._opacity = nn.Parameter(torch.cat([set_requires_grad(pre_trained_opacity, False), set_requires_grad(self._opacity, True)]))
+        self._scaling = nn.Parameter(torch.cat([set_requires_grad(pre_trained_scaling, False), set_requires_grad(self._scaling, True)]))
+        self._rotation = nn.Parameter(torch.cat([set_requires_grad(pre_trained_rotation, False), set_requires_grad(self._rotation, True)]))
+
+        self.active_sh_degree = self.max_sh_degree
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
