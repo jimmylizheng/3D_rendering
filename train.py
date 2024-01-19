@@ -16,7 +16,7 @@ from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene, GaussianModel
-from utils.general_utils import safe_state
+from utils.general_utils import safe_state, progressive
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
@@ -35,6 +35,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
+
+    print("Progressive training: ", progressive)
     scene = Scene(dataset, gaussians)
     gaussians.training_setup(opt)
     if checkpoint:
@@ -100,11 +102,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         iter_end.record()
 
 
-        # # need to discard the out-of-bound index (first part has the gaussians we are training)
-        training_gaussians_size = gaussians._xyz.size(0)
-        # viewspace_point_tensor = viewspace_point_tensor_all[:training_gaussians_size, :]
-        visibility_filter = visibility_filter[:training_gaussians_size]
-        radii = radii[:training_gaussians_size]
+        if progressive:
+            # # need to discard the out-of-bound index (first part has the gaussians we are training)
+            training_gaussians_size = gaussians._xyz.size(0)
+            # viewspace_point_tensor = viewspace_point_tensor_all[:training_gaussians_size, :]
+            visibility_filter = visibility_filter[:training_gaussians_size]
+            radii = radii[:training_gaussians_size]
 
         with torch.no_grad():
             # Progress bar
@@ -119,9 +122,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (scene.pre_trained_gaussians, pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-
-                combined = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
-                scene.save(combined, iteration)
+                
+                if progressive:
+                    combined = combined_gaussians(gaussians.active_sh_degree, gaussians, scene.pre_trained_gaussians)
+                    scene.save(combined, iteration)
+                else:
+                    scene.save(gaussians, iteration)
 
             # Densification
             if iteration < opt.densify_until_iter:

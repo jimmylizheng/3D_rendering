@@ -85,7 +85,7 @@ class Scene:
 
         pre_trained_path = os.path.join(args.source_path,
                                         "sparse/0",
-                                        "base_0005_HF.ply")
+                                        "base_1_HF.ply")
         print("fetch pre trained ply: ", pre_trained_path)
         self.pre_trained_gaussians = GaussianModel(3)
         self.pre_trained_gaussians.load_ply(pre_trained_path)
