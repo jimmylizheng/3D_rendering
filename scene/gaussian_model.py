@@ -166,7 +166,7 @@ class GaussianModel:
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
                                                     max_steps=training_args.position_lr_max_steps)
-
+            
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
         for param_group in self.optimizer.param_groups:
@@ -214,6 +214,10 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
 
     def combined_ply(self, path):
+        def set_requires_grad(tensor, requires_grad):
+            """Returns a new tensor with the specified requires_grad setting."""
+            return tensor.detach().clone().requires_grad_(requires_grad)
+
         plydata = PlyData.read(path)
 
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
@@ -248,25 +252,55 @@ class GaussianModel:
             rots[:, idx] = np.asarray(plydata.elements[0][attr_name])
 
 
-        pre_trained_xyz = torch.tensor(xyz, dtype=torch.float, device="cuda")
-        pre_trained_features_dc = torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous()
-        pre_trained_features_rest = torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous()
-        pre_trained_opacity = torch.tensor(opacities, dtype=torch.float, device="cuda")
-        pre_trained_scaling = torch.tensor(scales, dtype=torch.float, device="cuda")
-        pre_trained_rotation = torch.tensor(rots, dtype=torch.float, device="cuda")
+        self.pre_trained_xyz = torch.tensor(xyz, dtype=torch.float, device="cuda").detach()
+        self.pre_trained_features_dc = torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().detach()
+        self.pre_trained_features_rest = torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().detach()
+        self.pre_trained_opacity = torch.tensor(opacities, dtype=torch.float, device="cuda").detach()
+        self.pre_trained_scaling = torch.tensor(scales, dtype=torch.float, device="cuda").detach()
+        self.pre_trained_rotation = torch.tensor(rots, dtype=torch.float, device="cuda").detach()
 
-        def set_requires_grad(tensor, requires_grad):
-            """Returns a new tensor with the specified requires_grad setting."""
-            return tensor.detach().clone().requires_grad_(requires_grad)
+        self.new_xyz = self._xyz.clone().detach()
+        self.new_features_dc = self._features_dc.clone().detach()
+        self.new_features_rest = self._features_rest.clone().detach()
+        self.new_opacity = self._opacity.clone().detach()
+        self.new_scaling = self._scaling.clone().detach()
+        self.new_rotation = self._rotation.clone().detach()
+
+        # def set_requires_grad(tensor, requires_grad):
+        #     """Returns a new tensor with the specified requires_grad setting."""
+        #     return tensor.detach().clone().requires_grad_(requires_grad)
     
         # combine the pre_trained gaussians to current gaussians
-        print("Combine gaussians with pre-trained gaussians. Pre-trained gaussians points", pre_trained_xyz.shape)
-        self._xyz = nn.Parameter(torch.cat([set_requires_grad(pre_trained_xyz, False), set_requires_grad(self._xyz, True)]))
-        self._features_dc = nn.Parameter(torch.cat([set_requires_grad(pre_trained_features_dc, False), set_requires_grad(self._features_dc, True)]))
-        self._features_rest = nn.Parameter(torch.cat([set_requires_grad(pre_trained_features_rest, False), set_requires_grad(self._features_rest, True)]))
-        self._opacity = nn.Parameter(torch.cat([set_requires_grad(pre_trained_opacity, False), set_requires_grad(self._opacity, True)]))
-        self._scaling = nn.Parameter(torch.cat([set_requires_grad(pre_trained_scaling, False), set_requires_grad(self._scaling, True)]))
-        self._rotation = nn.Parameter(torch.cat([set_requires_grad(pre_trained_rotation, False), set_requires_grad(self._rotation, True)]))
+        print("Combine gaussians with pre-trained gaussians. Pre-trained gaussians points", self.pre_trained_xyz.shape)
+        # set_requires_grad(pre_trained_xyz, False)
+
+        # model_parameters_1 = filter(lambda p: p.requires_grad, pre_trained_xyz)
+        # params = sum([np.prod(p.size()) for p in model_parameters_1])
+        # print('try function 1',params)
+
+        # model_parameters_2 = filter(lambda p: p.requires_grad, set_requires_grad(new_xyz, True))
+        # params = sum([np.prod(p.size()) for p in model_parameters_2])
+        # print('try function 2',params)
+
+        # combine = nn.Parameter(torch.cat((pre_trained_xyz, new_xyz),dim=0))
+        # # for i, param in enumerate(combine):
+        # #     if i>6710*3:
+        # #         # print(param)
+        # #         # combine[i].detach().clone().requires_grad_(False)
+        # #         # param.detach().clone().requires_grad_(False)
+        # #         print(param)
+        # model_parameters = filter(lambda p: p.requires_grad, pre_trained_xyz)
+        # params = sum([np.prod(p.size()) for p in model_parameters])
+        # print('combine xyz',params)
+        self._xyz = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_xyz, False), set_requires_grad(self.new_xyz,True)]))
+        model_parameters = filter(lambda p: p.requires_grad, self.pre_trained_xyz)
+        params = sum([np.prod(p.size()) for p in model_parameters])
+        print('pre_trained_xyz',params)
+        self._features_dc = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_dc, False), set_requires_grad(self.new_features_dc, True)]))
+        self._features_rest = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_rest, False), set_requires_grad(self.new_features_rest, True)]))
+        self._opacity = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_opacity, False), set_requires_grad(self.new_opacity, True)]))
+        self._scaling = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_scaling, False), set_requires_grad(self.new_scaling, True)]))
+        self._rotation = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_rotation, False), set_requires_grad(self.new_rotation, True)]))
 
         self.active_sh_degree = self.max_sh_degree
 
@@ -383,6 +417,29 @@ class GaussianModel:
                 optimizable_tensors[group["name"]] = group["params"][0]
 
         return optimizable_tensors
+    
+    def change_tensors_to_optimizer(self, tensors_dict):
+        optimizable_tensors = {}
+        for group in self.optimizer.param_groups:
+            assert len(group["params"]) == 1
+            extension_tensor = tensors_dict[group["name"]]
+            stored_state = self.optimizer.state.get(group['params'][0], None)
+            if stored_state is not None:
+
+                stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
+                stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
+
+                del self.optimizer.state[group['params'][0]]
+                group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                self.optimizer.state[group['params'][0]] = stored_state
+
+                optimizable_tensors[group["name"]] = group["params"][0]
+            else:
+                group["params"][0] = nn.Parameter(torch.cat((group["params"][0], extension_tensor), dim=0).requires_grad_(True))
+                optimizable_tensors[group["name"]] = group["params"][0]
+
+        return optimizable_tensors
+    
 
     def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
         d = {"xyz": new_xyz,
@@ -399,6 +456,31 @@ class GaussianModel:
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
+
+        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+    def replace_densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation):
+        d = {"xyz": new_xyz,
+        "f_dc": new_features_dc,
+        "f_rest": new_features_rest,
+        "opacity": new_opacities,
+        "scaling" : new_scaling,
+        "rotation" : new_rotation}
+
+        self._xyz = self.replace_tensor_to_optimizer(new_xyz,"xyz")["xyz"]
+        self._features_dc = self.replace_tensor_to_optimizer(new_features_dc,"f_dc")["f_dc"]
+        self._features_rest = self.replace_tensor_to_optimizer(new_features_rest,"f_rest")["f_rest"]
+        self._opacity = self.replace_tensor_to_optimizer(new_opacities,"opacity")["opacity"]
+        self._scaling = self.replace_tensor_to_optimizer(new_scaling,"scaling")["scaling"]
+        self._rotation = self.replace_tensor_to_optimizer(new_rotation,"rotation")["rotation"]
+        # self._xyz = optimizable_tensors["xyz"]
+        # self._features_dc = optimizable_tensors["f_dc"]
+        # self._features_rest = optimizable_tensors["f_rest"]
+        # self._opacity = optimizable_tensors["opacity"]
+        # self._scaling = optimizable_tensors["scaling"]
+        # self._rotation = optimizable_tensors["rotation"]
 
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -434,7 +516,7 @@ class GaussianModel:
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
-        
+        print('mask',selected_pts_mask)
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
@@ -443,6 +525,18 @@ class GaussianModel:
         new_rotation = self._rotation[selected_pts_mask]
 
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
+
+    def densify_and_change(self):
+        def set_requires_grad(tensor, requires_grad):
+            """Returns a new tensor with the specified requires_grad setting."""
+            return tensor.detach().clone().requires_grad_(requires_grad)
+        new_xyz = torch.cat((set_requires_grad(self.pre_trained_xyz, False),self._xyz[len(self.pre_trained_xyz):]),dim=0).requires_grad_(True)
+        new_features_dc = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_dc, False), set_requires_grad(self._features_dc[len(self.pre_trained_xyz):], True)]).requires_grad_(True))
+        new_features_rest = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_rest, False), set_requires_grad(self._features_rest[len(self.pre_trained_xyz):], True)]).requires_grad_(True))
+        new_opacities = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_opacity, False), set_requires_grad(self._opacity[len(self.pre_trained_xyz):], True)]).requires_grad_(True))
+        new_scaling = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_scaling, False), set_requires_grad(self._scaling[len(self.pre_trained_xyz):], True)]).requires_grad_(True))
+        new_rotation = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_rotation, False), set_requires_grad(self._rotation[len(self.pre_trained_xyz):], True)]).requires_grad_(True))
+        self.replace_densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         grads = self.xyz_gradient_accum / self.denom

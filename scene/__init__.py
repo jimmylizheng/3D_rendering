@@ -12,6 +12,7 @@
 import os
 import random
 import json
+import numpy as np
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
 from scene.gaussian_model import GaussianModel
@@ -39,7 +40,8 @@ class Scene:
 
         self.train_cameras = {}
         self.test_cameras = {}
-
+        print('source path',args.source_path)
+        print(os.path.join(args.source_path, "sparse"))
         if os.path.exists(os.path.join(args.source_path, "sparse")):
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")):
@@ -49,6 +51,7 @@ class Scene:
             assert False, "Could not recognize scene type!"
 
         if not self.loaded_iter:
+            print('not self.loaded_iter')
             with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
                 dest_file.write(src_file.read())
             json_cams = []
@@ -81,12 +84,14 @@ class Scene:
                                                            "point_cloud.ply"))
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
-
+        model_parameters = filter(lambda p: p.requires_grad, self.gaussians._xyz)
+        params = sum([np.prod(p.size()) for p in model_parameters])
+        print('create_from_pcd',params)
 
         if progressive: # load pre-trained gaussians and combine
             pre_trained_path = os.path.join(args.source_path,
                                             "sparse/0",
-                                            "base_1_HF.ply")
+                                            "6k_00031_LF/point_cloud/iteration_30000/point_cloud.ply")
             print("fetch pre trained ply: ", pre_trained_path)
 
             self.gaussians.combined_ply(pre_trained_path)

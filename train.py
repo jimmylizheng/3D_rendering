@@ -10,7 +10,9 @@
 #
 
 import os
+import numpy as np
 import torch
+from torch import nn
 from random import randint
 from utils.loss_utils import l1_loss, ssim
 from gaussian_renderer import render, network_gui
@@ -32,13 +34,25 @@ except ImportError:
 torch.manual_seed(0)
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
+    def set_requires_grad(tensor, requires_grad):
+        """Returns a new tensor with the specified requires_grad setting."""
+        return tensor.detach().clone().requires_grad_(requires_grad)
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
+    # model_parameters = filter(lambda p: p.requires_grad, gaussians._xyz)
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print('init',params)
 
     print("Progressive training: ", progressive)
     scene = Scene(dataset, gaussians)
+    # model_parameters = filter(lambda p: p.requires_grad, gaussians._xyz)
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print('after scene',params)
     gaussians.training_setup(opt)
+    model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
+    params = sum([np.prod(p.size()) for p in model_parameters])
+    print('after scene',params)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -70,7 +84,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 network_gui.conn = None
 
         iter_start.record()
-
+ 
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -97,7 +111,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
 
         iter_end.record()
-
+        # print(torch.cat([set_requires_grad(gaussians.pre_trained_xyz, False),gaussians._xyz[len(gaussians.pre_trained_xyz):]]))
+        # xyz = torch.cat([set_requires_grad(gaussians.pre_trained_xyz, False),gaussians._xyz[len(gaussians.pre_trained_xyz):]])
+        # para_xyz = nn.Parameter(xyz)
+        #gaussians._xyz[0:len(gaussians.pre_trained_xyz)] = set_requires_grad(gaussians.pre_trained_xyz, False)
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
@@ -134,6 +151,16 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
+            # print(gaussians._xyz)
+            model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
+            params = sum([np.prod(p.size()) for p in model_parameters])
+            print('after backward',params)
+            # print(gaussians.pre_trained_xyz[0])
+            # print(gaussians._xyz[0])
+            print('last',gaussians._xyz[-1])
+            # print(len(gaussians._xyz))
+            print('first',gaussians.new_xyz[0])
+            gaussians.densify_and_change()
 
 
 def prepare_output_and_logger(args):    
