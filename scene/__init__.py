@@ -93,6 +93,7 @@ class Scene:
                                             "sparse/0",
                                             # "6k.ply")
                                             "6k_00074_GT/point_cloud/iteration_30000/point_cloud.ply")
+                                            # "6k_00031_LF/point_cloud/iteration_30000/point_cloud.ply")
             print("fetch pre trained ply: ", pre_trained_path)
 
             self.gaussians.combined_ply(pre_trained_path)

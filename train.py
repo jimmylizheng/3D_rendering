@@ -70,10 +70,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
 
-    LPIPS = lpips.LPIPS(net='vgg')
-    for param in LPIPS.parameters():
-        param.requires_grad = False
-    LPIPS.cuda()
+    # LPIPS = lpips.LPIPS(net='vgg')
+    # for param in LPIPS.parameters():
+    #     param.requires_grad = False
+    # LPIPS.cuda()
 
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
@@ -121,14 +121,14 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
         
-        # angela
-        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        lpips_loss = LPIPS(image, gt_image).mean()
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * lpips_loss
+        # angela: try lpips loss
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        # lpips_loss = LPIPS(image, gt_image).mean()
+        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * lpips_loss
 
         loss.backward()
 
-        # angela
+        # angela: reset gradients
         pre_trained_size = len(gaussians.pre_trained_xyz)
         gaussians._xyz.grad[: pre_trained_size] = 0.0
         gaussians._features_dc.grad[: pre_trained_size] = 0.0
