@@ -210,6 +210,10 @@ class GaussianModel:
 
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
+
+        # angela
+        opacities_new[: len(self.pre_trained_xyz)] = self.pre_trained_opacity
+
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
 
@@ -296,6 +300,14 @@ class GaussianModel:
         model_parameters = filter(lambda p: p.requires_grad, self.pre_trained_xyz)
         params = sum([np.prod(p.size()) for p in model_parameters])
         print('pre_trained_xyz',params)
+
+        # after concat, both pre_trained and new_xyz are all requires_grad=True
+        model_parameters1 = filter(lambda p: p.requires_grad, self._xyz)
+        params1 = sum([np.prod(p.size()) for p in model_parameters1])
+        print('self xyz', params1)
+
+
+        # although we concat with partial requries_grad=False, True, after nn.Parameter, all turn into True
         self._features_dc = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_dc, False), set_requires_grad(self.new_features_dc, True)]))
         self._features_rest = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_features_rest, False), set_requires_grad(self.new_features_rest, True)]))
         self._opacity = nn.Parameter(torch.cat([set_requires_grad(self.pre_trained_opacity, False), set_requires_grad(self.new_opacity, True)]))
@@ -382,6 +394,11 @@ class GaussianModel:
 
     def prune_points(self, mask):
         valid_points_mask = ~mask
+
+        # angela, do not prune the pre-trained 
+        pre_trained_size = len(self.pre_trained_xyz)
+        valid_points_mask[:pre_trained_size] = True
+
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
         self._xyz = optimizable_tensors["xyz"]
@@ -516,7 +533,7 @@ class GaussianModel:
         selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
         selected_pts_mask = torch.logical_and(selected_pts_mask,
                                               torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
-        print('mask',selected_pts_mask)
+        # print('mask',selected_pts_mask)
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
         new_features_rest = self._features_rest[selected_pts_mask]
@@ -539,6 +556,10 @@ class GaussianModel:
         self.replace_densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
+
+        # angela
+        # self.freeze_grads()
+
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -550,6 +571,10 @@ class GaussianModel:
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+        
+        # angela
+        prune_mask = self.freeze_opacity(prune_mask)
+
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
@@ -557,3 +582,12 @@ class GaussianModel:
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
+
+    def freeze_grads(self):
+        pre_trained_len = len(self.pre_trained_xyz)
+        self.xyz_gradient_accum[: pre_trained_len] = 0.0
+
+    def freeze_opacity(self, prune_mask):
+        pre_trained_len = len(self.pre_trained_xyz)
+        prune_mask[: pre_trained_len] = False
+        return prune_mask

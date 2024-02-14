@@ -20,10 +20,12 @@ import sys
 from scene import Scene, GaussianModel
 from utils.general_utils import safe_state, progressive
 import uuid
-from tqdm import tqdm
+from tqdm.auto import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import lpips
+
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
@@ -67,6 +69,12 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     ema_loss_for_log = 0.0
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
+
+    LPIPS = lpips.LPIPS(net='vgg')
+    for param in LPIPS.parameters():
+        param.requires_grad = False
+    LPIPS.cuda()
+
     for iteration in range(first_iter, opt.iterations + 1):        
         if network_gui.conn == None:
             network_gui.try_connect()
@@ -104,11 +112,32 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg['render'], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         
+        # if (iteration in [1, 600, 1200, 3000, 3001]):
+        #     print("viewspace_point_tensor", viewspace_point_tensor.shape) # torch.Size([189396, 3])
+        #     print("visibility_filter", visibility_filter.shape) #torch.Size([189396])
+        #     print("number of points", gaussians._xyz.shape)
+
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        
+        # angela
+        # loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
+        lpips_loss = LPIPS(image, gt_image).mean()
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * lpips_loss
+
         loss.backward()
+
+        # angela
+        pre_trained_size = len(gaussians.pre_trained_xyz)
+        gaussians._xyz.grad[: pre_trained_size] = 0.0
+        gaussians._features_dc.grad[: pre_trained_size] = 0.0
+        gaussians._features_rest.grad[: pre_trained_size] = 0.0
+        gaussians._opacity.grad[: pre_trained_size] = 0.0
+        gaussians._scaling.grad[: pre_trained_size] = 0.0
+        gaussians._rotation.grad[: pre_trained_size] = 0.0
+        viewspace_point_tensor.grad[: pre_trained_size] = 0.0
+
 
         iter_end.record()
         # print(torch.cat([set_requires_grad(gaussians.pre_trained_xyz, False),gaussians._xyz[len(gaussians.pre_trained_xyz):]]))
@@ -128,6 +157,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
+                print("\nnumber of points: {}".format(scene.gaussians.get_xyz.shape[0]))
                 scene.save(iteration)
 
             # Densification
@@ -151,16 +181,18 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
-            # print(gaussians._xyz)
-            model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
-            params = sum([np.prod(p.size()) for p in model_parameters])
-            print('after backward',params)
-            # print(gaussians.pre_trained_xyz[0])
-            # print(gaussians._xyz[0])
-            print('last',gaussians._xyz[-1])
-            # print(len(gaussians._xyz))
-            print('first',gaussians.new_xyz[0])
-            gaussians.densify_and_change()
+
+            # if (iteration in [1, 2, 10, 600, 700, 1200, 3000, 3100]):
+            #     # print(gaussians._xyz)
+            #     model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
+            #     params = sum([np.prod(p.size()) for p in model_parameters])
+            #     print('after backward',params)
+            #     print(gaussians.pre_trained_xyz[0])
+            #     print('first', gaussians._xyz[0])
+            #     print('last',gaussians._xyz[-1])
+                # print(len(gaussians._xyz))
+                # print('first',gaussians.new_xyz[0])
+                # gaussians.densify_and_change()
 
 
 def prepare_output_and_logger(args):    
@@ -236,7 +268,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1, 2, 7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1200, 7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
