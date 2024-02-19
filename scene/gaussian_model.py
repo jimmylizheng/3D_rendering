@@ -19,7 +19,7 @@ from plyfile import PlyData, PlyElement
 from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
-from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.general_utils import strip_symmetric, build_scaling_rotation, progressive
 
 class GaussianModel:
 
@@ -212,7 +212,8 @@ class GaussianModel:
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
 
         # angela: recover the opacity for the frozen part
-        opacities_new[: len(self.pre_trained_xyz)] = self.pre_trained_opacity
+        if progressive:
+            opacities_new[: len(self.pre_trained_xyz)] = self.pre_trained_opacity
 
         optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
         self._opacity = optimizable_tensors["opacity"]
@@ -395,9 +396,10 @@ class GaussianModel:
     def prune_points(self, mask):
         valid_points_mask = ~mask
 
-        # angela: do not prune the pre-trained 
-        pre_trained_size = len(self.pre_trained_xyz)
-        valid_points_mask[:pre_trained_size] = True
+        # angela: do not prune the pre-trained
+        if progressive:
+            pre_trained_size = len(self.pre_trained_xyz)
+            valid_points_mask[:pre_trained_size] = True
 
         optimizable_tensors = self._prune_optimizer(valid_points_mask)
 
@@ -569,7 +571,8 @@ class GaussianModel:
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         
         # angela: prune by opacity is not using gradiets, need to freeze manually
-        prune_mask = self.freeze_opacity(prune_mask)
+        if progressive:
+            prune_mask = self.freeze_opacity(prune_mask)
 
         self.prune_points(prune_mask)
 

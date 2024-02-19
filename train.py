@@ -40,11 +40,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         """Returns a new tensor with the specified requires_grad setting."""
         return tensor.detach().clone().requires_grad_(requires_grad)
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
+    tb_writer, metrics_f = prepare_output_and_logger(dataset)
     gaussians = GaussianModel(dataset.sh_degree)
     # model_parameters = filter(lambda p: p.requires_grad, gaussians._xyz)
     # params = sum([np.prod(p.size()) for p in model_parameters])
     # print('init',params)
+
+    metrics_f.write(f"Progressive training: {progressive}\n")
+    metrics_f.write(f"iterations: {opt.iterations}\n")
+    metrics_f.write(f"position_lr_init: {opt.position_lr_init}\n")
+    metrics_f.write(f"densification_interval: {opt.densification_interval}\n")
+    metrics_f.write(f"opacity_reset_interval: {opt.opacity_reset_interval}\n")
+    metrics_f.write(f"densify_from_iter: {opt.densify_from_iter}\n")
+    metrics_f.write(f"densify_until_iter: {opt.densify_until_iter}\n")
+    metrics_f.write(f"densify_grad_threshold: {opt.densify_grad_threshold}\n")
 
     print("Progressive training: ", progressive)
     scene = Scene(dataset, gaussians)
@@ -52,9 +61,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     # params = sum([np.prod(p.size()) for p in model_parameters])
     # print('after scene',params)
     gaussians.training_setup(opt)
-    model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
-    params = sum([np.prod(p.size()) for p in model_parameters])
-    print('after scene',params)
+    # model_parameters = filter(lambda p: p.requires_grad, gaussians.pre_trained_xyz)
+    # params = sum([np.prod(p.size()) for p in model_parameters])
+    # print('after scene',params)
     if checkpoint:
         (model_params, first_iter) = torch.load(checkpoint)
         gaussians.restore(model_params, opt)
@@ -129,14 +138,15 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
 
         # angela: reset gradients
-        pre_trained_size = len(gaussians.pre_trained_xyz)
-        gaussians._xyz.grad[: pre_trained_size] = 0.0
-        gaussians._features_dc.grad[: pre_trained_size] = 0.0
-        gaussians._features_rest.grad[: pre_trained_size] = 0.0
-        gaussians._opacity.grad[: pre_trained_size] = 0.0
-        gaussians._scaling.grad[: pre_trained_size] = 0.0
-        gaussians._rotation.grad[: pre_trained_size] = 0.0
-        viewspace_point_tensor.grad[: pre_trained_size] = 0.0
+        if progressive:
+            pre_trained_size = len(gaussians.pre_trained_xyz)
+            gaussians._xyz.grad[: pre_trained_size] = 0.0
+            gaussians._features_dc.grad[: pre_trained_size] = 0.0
+            gaussians._features_rest.grad[: pre_trained_size] = 0.0
+            gaussians._opacity.grad[: pre_trained_size] = 0.0
+            gaussians._scaling.grad[: pre_trained_size] = 0.0
+            gaussians._rotation.grad[: pre_trained_size] = 0.0
+            viewspace_point_tensor.grad[: pre_trained_size] = 0.0
 
 
         iter_end.record()
@@ -154,11 +164,17 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            psnr_test = training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 print("\nnumber of points: {}".format(scene.gaussians.get_xyz.shape[0]))
                 scene.save(iteration)
+
+                metrics_f.write(f"Iteration: {iteration}\n")
+                metrics_f.write(f"Number of points: {scene.gaussians.get_xyz.shape[0]}\n")
+                metrics_f.write(f"PSNR: {psnr_test}\n")
+                if (iteration == opt.iterations):
+                    metrics_f.close()
 
             # Densification
             if iteration < opt.densify_until_iter:
@@ -208,6 +224,7 @@ def prepare_output_and_logger(args):
     os.makedirs(args.model_path, exist_ok = True)
     with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(args))))
+    metrics_f =  open(os.path.join(args.model_path, 'result.txt'), 'a')
 
     # Create Tensorboard writer
     tb_writer = None
@@ -215,7 +232,7 @@ def prepare_output_and_logger(args):
         tb_writer = SummaryWriter(args.model_path)
     else:
         print("Tensorboard not available: not logging progress")
-    return tb_writer
+    return tb_writer, metrics_f
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, renderFunc, renderArgs):
     if tb_writer:
@@ -256,6 +273,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         #     tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
         #     tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
         torch.cuda.empty_cache()
+        return psnr_test
 
 if __name__ == "__main__":
     # Set up command line argument parser
@@ -268,7 +286,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[7_000, 30_000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1200, 7_000, 30_000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[7_000, 30_000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--start_checkpoint", type=str, default = None)
